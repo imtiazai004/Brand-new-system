@@ -1,0 +1,159 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User account information with school association.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "teacher", "management", "admin", "guardian"] },
+        "schoolId": { "type": "string", "description": "Reference to the associated school." },
+        "studentId": { "type": "string", "description": "Linked student ID for guardians." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email", "role", "schoolId"]
+    },
+    "Class": {
+      "title": "School Class",
+      "description": "A specific class group (e.g., Grade 10-A).",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "section": { "type": "string" },
+        "teacherId": { "type": "string", "description": "Teacher assigned to the class." },
+        "studentCount": { "type": "number" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["name", "section", "teacherId", "schoolId"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Enrolled student record.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "grade": { "type": "string" },
+        "parentEmail": { "type": "string", "format": "email" },
+        "studentId": { "type": "string", "description": "Custom student ID code." },
+        "status": { "type": "string", "enum": ["Active", "Alumni"] },
+        "attendanceStatus": { "type": "string", "enum": ["Present", "Absent", "Late"] },
+        "attendancePercentage": { "type": "number" },
+        "classId": { "type": "string" },
+        "enrollmentDate": { "type": "string", "format": "date" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["name", "grade", "studentId", "status", "schoolId"]
+    },
+    "TeacherProfile": {
+      "title": "Teacher Profile",
+      "description": "Detailed teacher information.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "subjectSpecialty": { "type": "string" },
+        "assignedClasses": { "type": "array", "items": { "type": "string" } },
+        "contactInfo": { "type": "string" },
+        "email": { "type": "string" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["name", "email", "schoolId"]
+    },
+    "ExamResult": {
+      "title": "Exam Result",
+      "description": "Student assessment score.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "subject": { "type": "string" },
+        "score": { "type": "number" },
+        "grade": { "type": "string" },
+        "term": { "type": "string" },
+        "classId": { "type": "string" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["studentId", "subject", "score", "term", "schoolId"]
+    },
+    "Fee": {
+      "title": "School Fee",
+      "description": "Fee record for a student.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Paid", "Unpaid", "Partial"] },
+        "dueDate": { "type": "string", "format": "date" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["studentId", "amount", "status", "dueDate", "schoolId"]
+    },
+    "Meeting": {
+      "title": "Meeting Request",
+      "description": "Request for a meeting between guardian and teacher.",
+      "type": "object",
+      "properties": {
+        "guardianId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "purpose": { "type": "string" },
+        "preferredTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["Pending", "Scheduled", "Completed", "Cancelled"] },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["guardianId", "teacherId", "purpose", "preferredTime", "schoolId"]
+    },
+    "Announcement": {
+      "title": "School Announcement",
+      "description": "Public school-wide update.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string", "enum": ["Holiday", "Urgent", "Achievement", "Event", "General"] },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["title", "content", "category", "authorId", "schoolId"]
+    },
+    "SchoolEvent": {
+      "title": "School Event",
+      "description": "Scheduled event for the school calendar.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "description": { "type": "string" },
+        "location": { "type": "string" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["title", "date", "description", "location", "schoolId"]
+    },
+    "MediaItem": {
+      "title": "Media Item",
+      "description": "Photo or video for the school gallery.",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "type": { "type": "string", "enum": ["image", "video"] },
+        "caption": { "type": "string" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["url", "type", "schoolId"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "UserProfile", "description": "Global user accounts." },
+    "/schools/{schoolId}/classes/{classId}": { "schema": "Class", "description": "School classes." },
+    "/schools/{schoolId}/students/{id}": { "schema": "Student", "description": "Student roster." },
+    "/schools/{schoolId}/teachers/{id}": { "schema": "TeacherProfile", "description": "Teacher directory." },
+    "/schools/{schoolId}/examResults/{id}": { "schema": "ExamResult", "description": "Academic performance records." },
+    "/schools/{schoolId}/fees/{id}": { "schema": "Fee", "description": "School fee records." },
+    "/schools/{schoolId}/meetings/{id}": { "schema": "Meeting", "description": "Parent-teacher meeting requests." },
+    "/schools/{schoolId}/announcements/{id}": { "schema": "Announcement", "description": "Public school-wide updates." },
+    "/schools/{schoolId}/events/{id}": { "schema": "SchoolEvent", "description": "Calendar events." },
+    "/schools/{schoolId}/media/{id}": { "schema": "MediaItem", "description": "School media gallery." }
+  }
+}

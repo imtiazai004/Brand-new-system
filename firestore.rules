@@ -1,0 +1,204 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Fields:
+    //   - uid: string (required) - Firebase Auth UID
+    //   - displayName: string (required) - Full Name
+    //   - email: string (required) - Professional Email
+    //   - role: string (required) - ['admin', 'teacher', 'management', 'student']
+    //   - schoolId: string (required) - Tenant identifier
+    //
+    // Collection: /schools/{schoolId}/students/{id}
+    // Fields:
+    //   - name: string (required, < 100 chars)
+    //   - grade: string (required)
+    //   - studentId: string (required) - Unique enrollment code
+    //   - status: string (required) - ['Active', 'Alumni', 'Inactive']
+    //   - schoolId: string (required) - Must match parent
+    //
+    // Collection: /schools/{schoolId}/teachers/{id}
+    // Fields:
+    //   - name: string (required)
+    //   - email: string (required)
+    //   - subjectSpecialty: string (required)
+    //   - schoolId: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Get schoolId from token (preferred) or user document
+    function getSchoolId() {
+      return request.auth.token.schoolId != null 
+        ? request.auth.token.schoolId 
+        : (exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId 
+            : null);
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function belongsToSchool(schoolId) {
+      return isAuthenticated() && getSchoolId() == schoolId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             (getUserData().role == 'admin' || request.auth.token.role == 'admin' ||
+              (request.auth.token.email == "naseebgl003@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isManagement() {
+      return isAuthenticated() && (getUserData().role in ['admin', 'management']);
+    }
+
+    function isFaculty() {
+      return isAuthenticated() && (getUserData().role in ['admin', 'teacher', 'management']);
+    }
+
+    function isGuardian() {
+      return isAuthenticated() && getUserData().role == 'guardian';
+    }
+
+    function getLinkedStudentId() {
+      return getUserData().studentId;
+    }
+
+    // Data Validation Helpers
+    function isValidStudent(data) {
+      return data.keys().hasAll(['name', 'grade', 'studentId', 'status', 'schoolId']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.status in ['Active', 'Alumni', 'Inactive'] &&
+             data.schoolId is string;
+    }
+
+    function isValidTeacher(data) {
+      return data.keys().hasAll(['name', 'email', 'subjectSpecialty', 'schoolId']) &&
+             data.name is string && data.email is string &&
+             data.schoolId is string;
+    }
+
+    function uidNotModified() {
+      return request.resource.data.uid == resource.data.uid;
+    }
+
+    function schoolIdMatches(schoolId) {
+      return request.resource.data.schoolId == schoolId;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // User profiles (Global)
+    match /users/{userId} {
+      // Users can read themselves. Admins/Management of same school can read others.
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        (isManagement() && getSchoolId() == resource.data.schoolId)
+      );
+      
+      // Initial creation: Allow any valid role for own profile
+      allow create: if isAuthenticated() && request.auth.uid == userId &&
+                     request.resource.data.role in ['student', 'teacher', 'management', 'admin', 'guardian'];
+                     
+      // Updates: Self can update name/photo, but not role/schoolId unless admin
+      // EXCEPTION: Allow setting schoolId and initial role if they don't have one yet (onboarding)
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == userId && 
+         request.resource.data.role == resource.data.role && 
+         request.resource.data.schoolId == resource.data.schoolId) ||
+        (request.auth.uid == userId && 
+         (resource.data.schoolId == null || resource.data.schoolId == "") && 
+         request.resource.data.schoolId != null) ||
+        isAdmin()
+      );
+    }
+
+    // Tenant-isolated school data
+    match /schools/{schoolId} {
+      // Allow getting a school doc to verify invite codes, but restrict listing (queries)
+      allow get: if isAuthenticated();
+      allow list: if belongsToSchool(schoolId) || resource.data.adminId == request.auth.uid;
+      
+      allow create: if isAuthenticated() && request.resource.data.adminId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.adminId == request.auth.uid;
+
+      // Classes
+      match /classes/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin();
+        allow write: if (belongsToSchool(schoolId) && isFaculty()) || isAdmin();
+      }
+
+      // Students
+      match /students/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin() || (isGuardian() && resource.data.studentId == getLinkedStudentId());
+        allow create: if (belongsToSchool(schoolId) && isFaculty() && isValidStudent(request.resource.data)) || isAdmin();
+        allow update: if (belongsToSchool(schoolId) && isFaculty() && isValidStudent(request.resource.data)) || isAdmin();
+        allow delete: if (belongsToSchool(schoolId) && isManagement()) || isAdmin();
+      }
+
+      // Teachers
+      match /teachers/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin();
+        allow write: if (belongsToSchool(schoolId) && isManagement() && isValidTeacher(request.resource.data)) || isAdmin();
+      }
+
+      // Exam Results
+      match /examResults/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin() || (isGuardian() && resource.data.studentId == getLinkedStudentId());
+        allow write: if (belongsToSchool(schoolId) && isFaculty()) || isAdmin();
+      }
+
+      // Fees
+      match /fees/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin() || getUserData().role == 'student' || (isGuardian() && resource.data.studentId == getLinkedStudentId());
+        allow write: if (belongsToSchool(schoolId) && isManagement()) || isAdmin();
+      }
+
+      // Meetings
+      match /meetings/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin() || (isFaculty() || (isGuardian() && resource.data.guardianId == request.auth.uid));
+        allow create: if (belongsToSchool(schoolId) && (isGuardian() && request.resource.data.guardianId == request.auth.uid)) || isAdmin();
+        allow update: if (belongsToSchool(schoolId) && (isFaculty() || (isGuardian() && resource.data.guardianId == request.auth.uid))) || isAdmin();
+      }
+
+      // Announcements
+      match /announcements/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin();
+        allow write: if (belongsToSchool(schoolId) && isManagement()) || isAdmin();
+      }
+
+      // Events
+      match /events/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin();
+        allow write: if (belongsToSchool(schoolId) && isManagement()) || isAdmin();
+      }
+
+      // Media
+      match /media/{id} {
+        allow read: if belongsToSchool(schoolId) || isAdmin();
+        allow write: if (belongsToSchool(schoolId) && isManagement()) || isAdmin();
+      }
+    }
+
+    // Denial by default for everything else
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
